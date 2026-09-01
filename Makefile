@@ -5,10 +5,10 @@ $(error "Please set DEVKITSH4 in your environment. export DEVKITSH4=<path to sdk
 endif
 include $(DEVKITSH4)/exword_rules
 
-TARGET       := hello
-MODNAME      := helloworld
-APPTITLE     := Hello, world!
-APPID        := HELLO
+TARGET       := apple
+MODNAME      := helloapple
+APPTITLE     := Hello, APPLE!
+APPID        := APPLE
 APPMOD       := $(TARGET).d01
 
 SOURCEDIR    := src
@@ -16,14 +16,32 @@ HTMLDIR      := html
 INSTALLDIR   := $(HOME)/.local/share/exword
 BUILDS       := ja cn
 EXCLUDE      :=
-CFILES       := $(filter-out $(EXCLUDE),$(wildcard $(SOURCEDIR)/*.c)) $(wildcard $(SOURCEDIR)/libc/*.c)
-SFILES       := $(wildcard $(SOURCEDIR)/*.s) $(wildcard $(SOURCEDIR)/libc/*.s)
+SRCDIRS      := $(SOURCEDIR) $(SOURCEDIR)/libc $(SOURCEDIR)/libct $(SOURCEDIR)/libct/fsc $(SOURCEDIR)/faketerminal
+CFILES       := $(filter-out $(EXCLUDE),$(foreach dir,$(SRCDIRS),$(wildcard $(dir)/*.c)))
+SFILES       := $(foreach dir,$(SRCDIRS),$(wildcard $(dir)/*.s))
 OBJECTS      := $(CFILES:.c=.o) $(SFILES:.s=.o)
 
 CC_OPTS      :=
-LDFLAGS      := -Wall -std=gnu17 -nostdlib -L$(DEVKITPRO)/libdataplus/lib -ldataplus -lgraphics -lsh4a
+# -mexword は暗黙で "-T exword.ld" を追加するため、-T を渡すだけでは
+# 置き換わらず標準スクリプトと二重に読まれてしまう(_sbss/_ebss 等の
+# シンボルが壊れ、実機で起動直後にクラッシュする実害があった)。
+# -specs=no_exword_ld.specs でその自動付加を止め、exword_ram.ld 側の
+# STARTUP("exword_crt0.o") で crt0 を明示的にリンクする。
+LDFLAGS      := -Wall -std=gnu17 -nostdlib -specs=no_exword_ld.specs -T exword_ram.ld -L$(DEVKITPRO)/libdataplus/lib -ldataplus -lgraphics -lsh4a -lgcc
 CFLAGS       := -Wall -std=gnu17 -fno-builtin -I$(DEVKITPRO)/libdataplus/include -I$(SOURCEDIR) -I$(SOURCEDIR)/libc/include -O3 $(CC_OPTS)
 ASFLAGS      := -Wall -std=gnu17 -m4-nofpu
+
+# ocbwb/icbi (キャッシュ操作命令) は -m3 ではアセンブルできないため、
+# これらを使うファイルだけ SH4 系の命令セットでコンパイルする。
+# MACHDEP の後ろに CFLAGS が並ぶので、後勝ちで -m3 を上書きできる。
+src/faketerminal/exec_test.o: CFLAGS += -m4-nofpu
+src/faketerminal/ram_exec.o:  CFLAGS += -m4-nofpu
+src/faketerminal/bapx.o:      CFLAGS += -m4-nofpu
+
+# 切り分け用: SDL2ハーネス(同一ロジック、host gcc -O3)ではフレームズレが
+# 再現しないため、-O3最適化(sh-elf-gcc)が原因かどうかを確認している。
+# CFLAGSは元々-O3を含むが、-O0を後ろに追加すると後勝ちでこちらが有効になる。
+src/faketerminal/bapx.o:      CFLAGS += -O0
 
 app: $(addprefix build/,$(addsuffix /$(APPID),$(BUILDS)))
 

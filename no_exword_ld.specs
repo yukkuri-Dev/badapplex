@@ -1,0 +1,4 @@
+%rename link_exword old_link_exword
+
+*link_exword:
+-L %:getenv(DEVKITPRO /libdataplus/lib)

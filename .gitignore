@@ -4,3 +4,10 @@ build/
 *.d01
 *.elf
 *.map
+
+# 著作物のため追跡しない
+resources/input.mp4
+resources/hoge.pay
+resources/*.bapx
+gnuboy-ex
+LCDC_struct.md

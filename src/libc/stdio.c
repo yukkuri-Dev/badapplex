@@ -146,3 +146,24 @@ int fileno(FILE *stream)
 {
 	return stream->fd;
 }
+
+int ferror(FILE *stream)
+{
+	(void)stream;
+	return 0; /* このバックエンドはfread/fopen失敗をNULL/0返却で伝えるため、常に0 */
+}
+
+FILE *freopen(const char *path, const char *mode, FILE *stream)
+{
+	if (stream != NULL)
+		fclose(stream);
+	return fopen(path, mode);
+}
+
+int getc(FILE *stream)
+{
+	unsigned char c;
+	if (fread(&c, 1, 1, stream) != 1)
+		return -1; /* EOF */
+	return (int)c;
+}

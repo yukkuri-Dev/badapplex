@@ -15,9 +15,13 @@ int rand(void);
 void srand(unsigned int seed);
 
 int atoi(const char *s);
+double strtod(const char *nptr, char **endptr);
+float strtof(const char *nptr, char **endptr);
+int abs(int j);
 
 void _Exit(int status);
 int atexit(void (*function)(void));
 void exit(int status);
+void abort(void);
 
 #endif // _STDLIB_H
