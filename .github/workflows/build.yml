@@ -2,6 +2,7 @@ name: Build
 
 on:
   push:
+    branches: '*'
     tags: '*'
   workflow_dispatch:
     inputs:
@@ -27,10 +28,15 @@ jobs:
           DEVKITPRO="$OLDPWD/devkitPro" DEVKITSH4="$DEVKITPRO/devkitSH4" PATH="$DEVKITPRO/tools/bin:$DEVKITSH4/bin:$PATH" make
           zip -r build.zip build
 
+      # タグpush/手動発行はそのタグ名で、通常のブランチpush(タグ無し)は
+      # 短いcommit hash (例: build-a1b2c3d) をタグ名代わりにしてReleaseを作る。
       - name: Publish
         run: |
           if [ -n "${{ inputs.tag }}" ]; then
-            gh release create "${{ inputs.tag }}" -t "${{ inputs.tag }}" -n "Automatic build of $(git rev-parse HEAD)." ./build.zip
+            release_tag="${{ inputs.tag }}"
+          elif [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            release_tag="${GITHUB_REF/refs\/*s\//}"
           else
-            gh release create "${GITHUB_REF/refs\/*s\//}" -t "${GITHUB_REF/refs\/*s\//}" -n "Automatic build of $(git rev-parse HEAD)." ./build.zip
+            release_tag="build-$(git rev-parse --short HEAD)"
           fi
+          gh release create "$release_tag" -t "$release_tag" -n "Automatic build of $(git rev-parse HEAD)." ./build.zip
