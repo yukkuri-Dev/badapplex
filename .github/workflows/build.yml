@@ -14,6 +14,12 @@ jobs:
   build:
     name: Build EX-word addon
     runs-on: ubuntu-latest
+    # デフォルトのGITHUB_TOKENはリポジトリ設定次第でread-onlyになっており、
+    # それだと `gh release create` が 403 (Resource not accessible by
+    # integration) で失敗する。Release作成に必要な書き込み権限をここで
+    # 明示的に付与する。
+    permissions:
+      contents: write
     env:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
