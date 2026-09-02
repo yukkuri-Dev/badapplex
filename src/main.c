@@ -32,7 +32,9 @@ int main(void) {
   ct_shell_init();
   ct_terminal_init(SCREEN_WIDTH, SCREEN_HEIGHT);
   ct_terminal_set_commit_callback(on_line_committed);
-  ct_terminal_puts("FakeTerminal\nPress POWER key to exit.\n\n");
+  ct_terminal_puts("FakeTerminal built with BadApplex \n");
+  ct_terminal_puts("Type HELP for available commands\n");
+  ct_terminal_puts("Press POWER key to exit.\n\n");
   ct_terminal_draw();
   lcdc_copy_vram();
 

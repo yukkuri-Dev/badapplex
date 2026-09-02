@@ -1,6 +1,7 @@
 #include "bapx.h"
 #include "terminal.h"
 #include "overclock.h"
+#include "perftimer.h"
 #include "../libc/memmgr.h"
 
 #include <stddef.h>
@@ -371,7 +372,18 @@ int bapx_play_file(const char *path)
 
 	// デコード+VRAM書き込みを毎フレーム間に合わせるため、再生中だけ
 	// CPUを高クロック動作させる(gnuboy-ex cpg_init/cpg_fini相当)。
-	overclock_enable();
+	//overclock_enable();
+	//DMAを使わない場合、効果がそこまでない割に、消費電力が増加するため無効化
+
+
+	// 実機での実際の処理速度を測るための簡易計測。TMU1のティック差分を
+	// フレームごとに積算し、再生終了後に平均/最悪ケースを表示する。
+	// 秒への正確な換算はできない(ペリフェラルクロック未確定)ので、
+	// 「ビルド間の相対比較用」の目安値として使う。
+	perftimer_init();
+	uint32_t decoded_frames = 0;
+	uint64_t ticks_total    = 0;
+	uint32_t ticks_worst    = 0;
 
 	int rc = 0;
 	for (uint32_t n = 0; n < v.frame_count; ++n) {
@@ -406,11 +418,33 @@ int bapx_play_file(const char *path)
 			got += (uint32_t)r;
 		}
 
+		uint32_t t0 = perftimer_ticks();
 		bapx_decode(&v, buf, buf + got, origin, screen_w);
 		lcdc_copy_vram();
+		uint32_t dt = perftimer_ticks() - t0;
+
+		++decoded_frames;
+		ticks_total += dt;
+		if (dt > ticks_worst)
+			ticks_worst = dt;
 	}
 
-	overclock_disable();
+	//overclock_disable();
+
+	if (decoded_frames > 0) {
+		uint32_t avg = (uint32_t)(ticks_total / decoded_frames);
+		char line[96];
+		// このプロジェクトのsprintf(src/libc/sprintf.c)は %l 長さ修飾子を
+		// 認識しない。"%lu"と書くと 'l' がどの書式にも一致せず読み捨てられ、
+		// 続く 'u' がリテラル文字としてそのまま出力される
+		// (va_argも呼ばれないので値も消費されない) ため、"u,u,u..."の
+		// ような出力になっていた。%u だけを使い、unsigned int にキャストする。
+		sprintf(line, "frames=%u avg_ticks=%u worst_ticks=%u\n",
+		        (unsigned int)decoded_frames, (unsigned int)avg,
+		        (unsigned int)ticks_worst);
+		ct_terminal_puts(line);
+	}
+
 	memmgr_free(buf);
 	sys_close(v.fd);
 	return rc;

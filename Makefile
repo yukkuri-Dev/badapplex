@@ -37,11 +37,22 @@ ASFLAGS      := -Wall -std=gnu17 -m4-nofpu
 src/faketerminal/exec_test.o: CFLAGS += -m4-nofpu
 src/faketerminal/ram_exec.o:  CFLAGS += -m4-nofpu
 src/faketerminal/bapx.o:      CFLAGS += -m4-nofpu
+src/faketerminal/bapx_dma.o:  CFLAGS += -m4-nofpu
 
 # 切り分け用: SDL2ハーネス(同一ロジック、host gcc -O3)ではフレームズレが
 # 再現しないため、-O3最適化(sh-elf-gcc)が原因かどうかを確認している。
 # CFLAGSは元々-O3を含むが、-O0を後ろに追加すると後勝ちでこちらが有効になる。
 src/faketerminal/bapx.o:      CFLAGS += -O0
+
+# 切り分け用: lcdc_copy_vram()のDMA完了待ちの後にウェイトを挟んでも
+# ズレは変わらなかった(無罪と判定済み)ので今は外している。
+# src/faketerminal/bapx_dma.o:  CFLAGS += -DBAPX_DMA_POST_COPY_DELAY_TICKS=1000
+
+# 切り分け用: SAR3にVRAM(0xac200000)以外の任意アドレスを指定すること
+# 自体がこのハードウェアで想定されていないのではという仮説の検証。
+# backbufをmemmgr poolではなくVRAM本体(528*320*2=0x52800バイト)の
+# 直後、32バイト境界に切り上げたアドレスへ固定配置する。
+src/faketerminal/bapx_dma.o:  CFLAGS += -DBAPX_DMA_FIXED_BACKBUF=0xac252800
 
 app: $(addprefix build/,$(addsuffix /$(APPID),$(BUILDS)))
 

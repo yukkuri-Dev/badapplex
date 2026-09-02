@@ -3,8 +3,10 @@
 #include "exec_test.h"
 #include "ram_exec.h"
 #include "bapx.h"
+#include "bapx_dma.h"
 #include "../libct/fsc/fs-control.h"
 #include "../libc/memmgr.h"
+#include <stdint.h>
 #include <string.h>
 #include <strings.h>
 #include <stdlib.h>
@@ -177,6 +179,128 @@ static void cmd_play(const char *arg)
 	}
 }
 
+// backbuf+DMA一括転送方式(bapx_dma.c)での再検証用。playと使い方は同じ。
+// overclockのPLL倍率をデータシート最大保証値に直した状態で、以前見えて
+// いた水平ズレが解消するかを比較するために用意している。
+static void cmd_playdma(const char *arg)
+{
+	if (arg[0] == '\0') {
+		ct_terminal_puts("usage: playdma <file.bin>\n");
+		return;
+	}
+
+	char target[CT_PATH_MAX];
+	if (path_is_absolute(arg)) {
+		strncpy(target, arg, sizeof(target) - 1);
+		target[sizeof(target) - 1] = '\0';
+	} else {
+		strncpy(target, current_path, sizeof(target) - 1);
+		target[sizeof(target) - 1] = '\0';
+		size_t len = strlen(target);
+		if (len > 0 && target[len - 1] != '\\')
+			strncat(target, "\\", sizeof(target) - strlen(target) - 1);
+		strncat(target, arg, sizeof(target) - strlen(target) - 1);
+	}
+
+	int rc = bapx_dma_play_file(target);
+
+	ct_terminal_draw();
+	if (rc != 0) {
+		ct_terminal_puts("playdma: ");
+		ct_terminal_puts(bapx_dma_strerror(rc));
+		ct_terminal_putc('\n');
+	}
+}
+
+// arg中の先頭の空白区切りトークンを1つ切り出す。次のトークンの開始位置
+// (末尾なら終端の '\0' を指す)を返す。mem/memw の "<addr> <value>" のような
+// 複数引数を split_command を使わず自前で分割するために使う。
+static const char *next_token(const char *arg, char *out, size_t out_size)
+{
+	while (*arg == ' ')
+		++arg;
+	size_t i = 0;
+	while (*arg != '\0' && *arg != ' ' && i + 1 < out_size) {
+		out[i++] = *arg++;
+	}
+	out[i] = '\0';
+	while (*arg == ' ')
+		++arg;
+	return arg;
+}
+
+// メモリの指定アドレスから4バイト整列で数ワード表示する。
+// 実験用の生メモリアクセスなので、不正なアドレスを指定すればクラッシュ
+// し得る(安全策は入れていない)。
+static void cmd_mem(const char *arg)
+{
+	char addrtok[32];
+	const char *rest = next_token(arg, addrtok, sizeof(addrtok));
+	if (addrtok[0] == '\0') {
+		ct_terminal_puts("usage: mem <addr> [count]\n");
+		return;
+	}
+	uintptr_t addr = (uintptr_t)atoi(addrtok);
+	addr &= ~(uintptr_t)3; // 4バイト境界に切り下げ
+
+	char cnttok[16];
+	next_token(rest, cnttok, sizeof(cnttok));
+	int count = cnttok[0] != '\0' ? atoi(cnttok) : 4;
+	if (count < 1)
+		count = 1;
+	if (count > 16)
+		count = 16;
+
+	for (int i = 0; i < count; ++i) {
+		volatile unsigned long *p = (volatile unsigned long *)(addr + (size_t)i * 4);
+		unsigned long v = *p;
+		char line[48];
+		sprintf(line, "%x: %x\n", (unsigned int)(uintptr_t)p, (unsigned int)v);
+		ct_terminal_puts(line);
+	}
+}
+
+// 指定アドレスへ1回だけ4バイト書き込む(OneShot)。実験用の生メモリ
+// アクセスなので、不正なアドレスを指定すればクラッシュし得る。
+static void cmd_memw(const char *arg)
+{
+	char addrtok[32];
+	const char *rest = next_token(arg, addrtok, sizeof(addrtok));
+	char valtok[32];
+	next_token(rest, valtok, sizeof(valtok));
+
+	if (addrtok[0] == '\0' || valtok[0] == '\0') {
+		ct_terminal_puts("usage: memw <addr> <value>\n");
+		return;
+	}
+
+	uintptr_t     addr = (uintptr_t)atoi(addrtok);
+	addr &= ~(uintptr_t)3; // 4バイト境界に切り下げ
+	unsigned long val  = (unsigned long)atoi(valtok);
+
+	volatile unsigned long *p = (volatile unsigned long *)addr;
+	*p = val;
+
+	char line[48];
+	sprintf(line, "wrote %x -> %x\n", (unsigned int)val, (unsigned int)addr);
+	ct_terminal_puts(line);
+}
+
+static void cmd_help(void)
+{
+	ct_terminal_puts(
+		"pwd\n"
+		"cd <dir>\n"
+		"ls\n"
+		"play <file.bin> (Not Recommended)\n"
+		"playdma <file.bin> (Recommended)\n"
+		"mem <addr> [count]\n"
+		"memw <addr> <value>  (oneshot write)\n"
+		"clrvram\n"
+		"ramtest [n]\n"
+		"help\n");
+}
+
 void ct_shell_exec(const char *line)
 {
 	char cmd[16];
@@ -194,6 +318,8 @@ void ct_shell_exec(const char *line)
 		cmd_ls();
 	} else if (strcasecmp(cmd, "PLAY") == 0) {
 		cmd_play(arg);
+	} else if (strcasecmp(cmd, "PLAYDMA") == 0) {
+		cmd_playdma(arg);
 	} else if (strcasecmp(cmd, "CHECKER") == 0) {
 		// 切り分け用: デコーダを使わず市松模様を直接backbufへ書いて
 		// DMA転送するだけ。これでも崩れるならDMA/backbuf/キャッシュ側、
@@ -250,6 +376,12 @@ void ct_shell_exec(const char *line)
 		strncat(line, numbuf, sizeof(line) - strlen(line) - 1);
 		strncat(line, " (expect same as n)\n", sizeof(line) - strlen(line) - 1);
 		ct_terminal_puts(line);
+	} else if (strcasecmp(cmd, "MEM") == 0) {
+		cmd_mem(arg);
+	} else if (strcasecmp(cmd, "MEMW") == 0) {
+		cmd_memw(arg);
+	} else if (strcasecmp(cmd, "HELP") == 0) {
+		cmd_help();
 	} else {
 		ct_terminal_puts(cmd);
 		ct_terminal_puts(": command not found\n");
